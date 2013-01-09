@@ -1,17 +1,29 @@
+CREATE TRIGGER update_test
+AFTER UPDATE OR INSERT OR DELETE ON dec_fire_history_test
+FOR EACH ROW
+EXECUTE PROCEDURE calc_fuel_age();
+
 CREATE OR REPLACE FUNCTION calc_fuel_age() RETURNS trigger as $update_test$
 DECLARE
-	row_data fuel_age_test%ROWTYPE;
+	id_array integer[];
+	cur_id integer;
 BEGIN
-	RAISE NOTICE 'Start';
+	RAISE NOTICE 'Begin';
 	IF (TG_OP = 'DELETE') THEN
-		-- Find fuel age polygons that intersect with the deleted fire history polygon
 		RAISE NOTICE 'Delete';
-		FOR row_data IN SELECT a.gid
+		--Select fuel history records that intersect with the deleted fire history polygon
+		SELECT a.gid INTO id_array
 			FROM fuel_age_test AS a
 			JOIN dec_fire_history_test AS b
 			ON ST_Intersects(a.geom, b.geom)
 			WHERE b.gid = old.gid
+			ORDER BY a.gid;
+			
+		--Loop through intersecting polys
+		RAISE NOTICE 'Array Value',cur_id;
+		FOREACH cur_id IN ARRAY id_array 
 		LOOP
+			RAISE NOTICE 'Loop';
 			-- If the intersecting polygon is more recent than the deleted polygon clip it
 			IF row_data.year1 < old.year1 THEN
 				UPDATE fuel_age_test SET a.geom = (SELECT ST_DIFFERENCE(a.geom,b.geom)
@@ -28,6 +40,8 @@ BEGIN
 	ELSIF (TG_OP = 'INSERT') THEN
 		RAISE NOTICE 'Insert';
 		--INSERT INTO fuel_age_test SELECT * FROM dec_fire_history_test WHERE gid = NEW.gid;
+	ELSE
+		RAISE NOTICE 'Nothing Happened';
 	END IF;
 RETURN NEW;
 END;
