@@ -7,7 +7,7 @@ BEGIN
 		-- Check for intersecting polygons, if there aren't any just insert the record into fuel_history
 		IF EXISTS (SELECT * FROM fuel_age_test AS a JOIN dec_fire_history_test AS b ON ST_Intersects(a.geom, b.geom) WHERE b.gid = new.gid) THEN
 			--Insert the new record into fuel_history
-			INSERT INTO fuel_age_test SELECT gid,year1,geom FROM dec_fire_history_test WHERE gid = new.gid;
+			--INSERT INTO fuel_age_test SELECT gid,year1,geom FROM dec_fire_history_test WHERE gid = new.gid;
 			--Loop through the intersecting polygons
 			FOR cur_rec IN SELECT * FROM fuel_age_test AS a JOIN dec_fire_history_test AS b ON ST_Intersects(a.geom, b.geom) WHERE b.gid = new.gid ORDER BY a.year1 LOOP
 				--If the inserted record is older than the intersecting record update the geometry of the intersecting record
@@ -41,15 +41,15 @@ BEGIN
 					cur_geom = null;
 				ELSE
 					--Get the geometry of the inserted record (current geometry + new geometry)
-					cur_geom := (SELECT ST_AsText(ST_MULTI(ST_UNION(b.geom,a.geom)))
+					cur_geom := (SELECT ST_AsText(ST_MULTI(ST_UNION(a.geom,b.geom)))
 						FROM fuel_age_test AS a, dec_fire_history_test AS b
 						WHERE a.gid = cur_rec.gid and b.gid = new.gid);
 
 					--Delete the old inserted record from fuel_age
-					DELETE FROM fuel_age_test WHERE gid = new.gid;
+					DELETE FROM fuel_age_test WHERE gid = cur_rec.gid;
 
 					--Recreate the inserted record with the new geometry
-					INSERT INTO fuel_age_test VALUES(new.gid,new.year1,ST_GeometryFromText(cur_geom,4326));
+					INSERT INTO fuel_age_test VALUES(cur_rec.gid,cur_rec.year1,ST_GeometryFromText(cur_geom,4326));
 
 					--Set cur_geom to null
 					cur_geom = null;
