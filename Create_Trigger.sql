@@ -1,17 +1,19 @@
+--********************** Create Function *******************************************************************************************
 CREATE OR REPLACE FUNCTION calc_fuel_age() RETURNS trigger as $$
 DECLARE
 	cur_rec 	RECORD;		--cursor variable
 	cur_geom 	VARCHAR; 	--current geometry variable
 BEGIN
-	IF (TG_OP = 'INSERT') THEN
+	IF (TG_OP = 'INSERT') OR (TG_OP = 'UPDATE') THEN
 		-- Check for intersecting polygons, if there aren't any just insert the record into fuel_history
 		IF EXISTS (SELECT * FROM fuel_age_test AS a JOIN dec_fire_history_test AS b ON ST_Intersects(a.geom, b.geom) WHERE b.gid = new.gid) THEN
-			--Insert the new record into fuel_history
-			--INSERT INTO fuel_age_test SELECT gid,year1,geom FROM dec_fire_history_test WHERE gid = new.gid;
 			--Loop through the intersecting polygons
 			FOR cur_rec IN SELECT * FROM fuel_age_test AS a JOIN dec_fire_history_test AS b ON ST_Intersects(a.geom, b.geom) WHERE b.gid = new.gid ORDER BY a.year1 LOOP
 				--If the inserted record is older than the intersecting record update the geometry of the intersecting record
 				IF new.year1 > cur_rec.year1 THEN
+					--Insert the new record into fuel_history
+					INSERT INTO fuel_age_test SELECT gid,year1,geom FROM dec_fire_history_test WHERE gid = new.gid;
+				
 					--Get the geometry of the current record (new geometry - current geometry)
 					cur_geom := (SELECT ST_AsText(ST_MULTI(ST_DIFFERENCE(a.geom,b.geom)))
 						FROM fuel_age_test AS a, dec_fire_history_test AS b
@@ -26,6 +28,9 @@ BEGIN
 					--Set cur_geom to null
 					cur_geom = null;
 				ELSIF new.year1 < cur_rec.year1 THEN
+					--Insert the new record into fuel_history
+					INSERT INTO fuel_age_test SELECT gid,year1,geom FROM dec_fire_history_test WHERE gid = new.gid;
+				
 					--Get the geometry of the inserted record (current geometry - new geometry)
 					cur_geom := (SELECT ST_AsText(ST_MULTI(ST_DIFFERENCE(b.geom,a.geom)))
 						FROM fuel_age_test AS a, dec_fire_history_test AS b
@@ -58,21 +63,6 @@ BEGIN
 		ELSE
 			INSERT INTO fuel_age_test SELECT gid,year1,geom FROM dec_fire_history_test WHERE gid = new.gid;
 		END IF;
-	ELSIF (TG_OP = 'UPDATE') THEN
-		-- Check for intersecting polygons
-		IF EXISTS (SELECT * FROM fuel_age_test AS a JOIN dec_fire_history AS b ON ST_Intersects(a.geom, b.geom) WHERE b.gid = new.gid) THEN
-			--Loop through the intersecting polygons
-			FOR cur_rec IN SELECT * FROM fuel_age_test AS a JOIN dec_fire_history AS b ON ST_Intersects(a.geom, b.geom) WHERE b.gid = new.gid ORDER BY a.year1 LOOP
-				--If the inserted record is older than the intersecting record update the geometry of the intersecting record
-				IF new.year1 > cur_rec.year1 THEN
-					--DELETE FROM fuel_age_test WHERE gid = cur_rec.gid;
-				
-					INSERT INTO fuel_age_test SELECT cur_rec.gid,cur_rec.year1,ST_MULTI(ST_DIFFERENCE(a.geom,b.geom))
-						FROM fuel_age_test AS a, dec_fire_history_test AS b
-						WHERE a.gid = cur_rec.gid and b.gid = new.gid;
-				END IF;
-			END LOOP;
-		END IF;
 	ELSIF (TG_OP = 'DELETE') THEN
 		-- Check for intersecting polygons (there should always be at least one though)
 		IF EXISTS (SELECT * FROM fuel_age_test AS a JOIN dec_fire_history AS b ON ST_Intersects(a.geom, b.geom) WHERE b.gid = new.gid) THEN
@@ -93,7 +83,7 @@ BEGIN
 	RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
---*****************************************************************************************************************
+--******************* Create Trigger **********************************************************************************************
 CREATE TRIGGER update_test
 AFTER UPDATE OR INSERT OR DELETE ON dec_fire_history_test
 FOR EACH ROW
